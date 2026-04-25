@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Local SQLite database file
+*.db
+
+# Generated outputs
+outputs/images/
+outputs/videos/
+outputs/posts/
