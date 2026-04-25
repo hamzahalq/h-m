@@ -1,0 +1,16 @@
+# Frontend
+streamlit>=1.35.0
+requests>=2.31.0
+pandas>=2.0.0
+
+# Backend (Mohammad)
+fastapi>=0.111.0
+uvicorn>=0.30.0
+sqlmodel>=0.0.18
+openai>=1.30.0
+fal-client>=0.4.0
+beautifulsoup4>=4.12.0
+python-dotenv>=1.0.0
+pytrends>=4.9.2
+resend>=0.8.0
+hijri-converter>=2.3.1
