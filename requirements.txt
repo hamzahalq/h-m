@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+sqlmodel
+requests
+python-dotenv
+beautifulsoup4
+openai
+fal-client
+pytrends
+moviepy
+resend
+streamlit
