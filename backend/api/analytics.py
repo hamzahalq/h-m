@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -30,7 +31,7 @@ def get_analytics(campaign_id: UUID | None = None, platform: str | None = None):
             results.append({
                 "post_id": str(row.post_id),
                 "platform": row.platform,
-                "date": post.date.isoformat() if post else None,
+                "date": post.date.isoformat() if post and post.date else None,
                 "topic": post.topic if post else None,
                 "impressions": row.impressions,
                 "reach": row.reach,
@@ -51,29 +52,84 @@ def get_analytics(campaign_id: UUID | None = None, platform: str | None = None):
 
 @router.get("/insights")
 def get_insights(campaign_id: UUID | None = None):
-    _ = campaign_id
+    analytics = get_analytics(campaign_id=campaign_id)
+    if analytics and os.getenv("OPENAI_API_KEY"):
+        insights = _gpt_insights(analytics)
+        if insights:
+            return insights
+    return _static_insights()
+
+
+def _gpt_insights(analytics: list[dict]) -> list[dict]:
+    try:
+        from openai import OpenAI
+        client = OpenAI()
+
+        sorted_data = sorted(analytics, key=lambda x: x.get("link_clicks", 0) + x.get("likes", 0), reverse=True)
+        top = sorted_data[:3]
+        bottom = sorted_data[-3:] if len(sorted_data) > 3 else []
+
+        summary = json.dumps({
+            "top_posts": [
+                {"platform": p["platform"], "topic": p["topic"], "impressions": p["impressions"],
+                 "link_clicks": p["link_clicks"], "likes": p["likes"], "ctr": p["ctr"], "best_time": p["best_time"]}
+                for p in top
+            ],
+            "bottom_posts": [
+                {"platform": p["platform"], "topic": p["topic"], "impressions": p["impressions"],
+                 "link_clicks": p["link_clicks"], "likes": p["likes"], "ctr": p["ctr"]}
+                for p in bottom
+            ],
+            "total_posts": len(analytics),
+        })
+
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Analyze this Saudi social media marketing campaign data:\n{summary}\n\n"
+                    "Generate 3 actionable insights. For each insight explain:\n"
+                    "- What performed well or poorly\n"
+                    "- Why it happened (timing, language, format, KSA audience behavior)\n"
+                    "- A specific recommendation for the next campaign\n\n"
+                    "Return JSON: {\"insights\": [{\"insight_text\": str, \"why\": str, "
+                    "\"recommendation\": str, \"confidence\": int (50-95), "
+                    "\"platform\": str, \"comparison_metric\": str (e.g. '+40% link clicks vs average')}]}"
+                ),
+            }],
+            response_format={"type": "json_object"},
+            max_tokens=700,
+        )
+        data = json.loads(resp.choices[0].message.content)
+        return data.get("insights", [])
+    except Exception:
+        return []
+
+
+def _static_insights() -> list[dict]:
     return [
         {
             "insight_text": "LinkedIn ROI posts performed 30% better than average at 10:00 KSA.",
-            "why": "Posted during peak KSA business hours on Tuesday. Used a cost-saving ROI angle (reduces $5000/month to $200).",
+            "why": "Posted during peak KSA business hours on Tuesday. Used a cost-saving ROI angle.",
             "recommendation": "Repeat ROI narrative with a clear numeric before/after on Tuesday mornings.",
-            "confidence": 0.81,
+            "confidence": 81,
             "platform": "linkedin",
             "comparison_metric": "+30% reactions vs. campaign average",
         },
         {
             "insight_text": "Instagram mixed-language reels outperformed Arabic-only posts by 18%.",
-            "why": "Mixed Arabic/English copy resonates with bilingual KSA audience aged 18-28 who consume both languages daily.",
+            "why": "Mixed Arabic/English copy resonates with bilingual KSA audience aged 18-28.",
             "recommendation": "Keep mixed copy for Reels. Use Arabic-only captions for Snapchat only.",
-            "confidence": 0.73,
+            "confidence": 73,
             "platform": "instagram",
             "comparison_metric": "+18% reach vs. Arabic-only posts",
         },
         {
             "insight_text": "TikTok posts at 19:30 got 52% more link clicks than morning posts.",
-            "why": "Evening slot aligns with post-Asr downtime for young Saudi users browsing entertainment content.",
+            "why": "Evening slot aligns with post-Asr downtime for young Saudi users.",
             "recommendation": "Lock TikTok posting time to 19:00-20:00 window across all campaigns.",
-            "confidence": 0.88,
+            "confidence": 88,
             "platform": "tiktok",
             "comparison_metric": "+52% link clicks vs. morning posts",
         },
@@ -82,7 +138,6 @@ def get_insights(campaign_id: UUID | None = None):
 
 @router.post("/seed")
 def seed_analytics(campaign_id: UUID):
-    """Seed realistic mock analytics for all posts in a campaign."""
     import random
     with get_session() as session:
         posts = session.exec(select(Post).where(Post.campaign_id == campaign_id)).all()
@@ -104,8 +159,8 @@ def seed_analytics(campaign_id: UUID):
                 impressions=impressions,
                 reach=reach,
                 likes=likes,
-                comments=random.randint(2, likes // 4 + 1),
-                shares=random.randint(1, likes // 6 + 1),
+                comments=random.randint(2, max(likes // 4, 1)),
+                shares=random.randint(1, max(likes // 6, 1)),
                 ctr=round(random.uniform(1.2, 6.5), 2),
                 profile_visits=random.randint(10, 200),
                 link_clicks=random.randint(5, 150),

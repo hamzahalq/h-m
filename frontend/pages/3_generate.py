@@ -61,16 +61,24 @@ if not st.session_state["generation_complete"]:
                 job_id = job.get("job_id")
                 st.session_state["job_id"] = job_id
 
-            progress_bar = st.progress(0, text="Generating visuals...")
-            status_placeholder = st.empty()
+            progress_bar = st.progress(0.0, text="Starting generation job...")
 
-            for i in range(10):
-                time.sleep(0.3)
-                progress = (i + 1) / 10
-                progress_bar.progress(progress, text=f"Generating... {int(progress * 100)}%")
-
-            status_placeholder.empty()
-            job_result = api_client.get_job_status(job_id)
+            job_result = {"status": "running", "progress": 0.0, "results": []}
+            for _ in range(150):  # poll up to 5 minutes
+                time.sleep(2)
+                try:
+                    job_result = api_client.get_job_status(job_id)
+                except Exception:
+                    pass
+                progress = float(job_result.get("progress", 0.0))
+                done_count = len(job_result.get("results", []))
+                total_count = max(len(posts), 1)
+                progress_bar.progress(
+                    min(progress, 0.99),
+                    text=f"Generating... {done_count}/{total_count} posts complete",
+                )
+                if job_result.get("status") == "done":
+                    break
 
             if job_result.get("status") == "done":
                 results_map = {r["post_id"]: r for r in job_result.get("results", [])}
